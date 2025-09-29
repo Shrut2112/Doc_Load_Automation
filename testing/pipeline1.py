@@ -25,7 +25,7 @@ clf_model = AutoModelForSequenceClassification.from_pretrained(
 ).to(device)
 summ_tokenizer = AutoTokenizer.from_pretrained(SUMMARIZATION_MODEL)
 summ_model = AutoModelForSeq2SeqLM.from_pretrained(SUMMARIZATION_MODEL).to(device)
-from ner_functions_init import ner_extraction  # Must be thread-safe
+from testing.ner_functions_init import ner_extraction  # Must be thread-safe
 from classification_dept import classify  # Should support vectorized inference
 
 def clean_text_english(text):

@@ -12,7 +12,7 @@ import spacy
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from pytesseract import Output
-from ner_functions_init import ner_extraction, get_deadline, get_financial_details
+from testing.ner_functions_init import ner_extraction, get_deadline, get_financial_details
 import gen_ai1_init as gen_ai1
 
 # ==================== CONFIGURATION ====================

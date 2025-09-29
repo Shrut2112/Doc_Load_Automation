@@ -24,10 +24,11 @@ BASE_DIR = Path(r"D:\clony\Doc_Load_Automation").resolve()
 LOCAL_CLF_DIR = BASE_DIR / "models" / "classifier"
 
 classification_dept_map = {
-    0: "Finance",
-    1: "Operations",
+    0: "Engineering",
+    1: "Finance",
     2: "HR",
-    3: "Engineering"
+    3: "Maintenance",
+    4: "Operations",
 }
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -127,6 +128,39 @@ def load_all_models():
     }
     return clf_tokenizer, clf_model, nlp_model
 
+def highlight_text(pdf_path, terms, output_path="highlighted.pdf"):
+    doc = pymupdf.open(pdf_path)
+
+    for page_num, page in enumerate(doc):
+        # ----- 1. Native text search highlighting -----
+        for term in terms:
+            text_instances = page.search_for(term)
+            for inst in text_instances:
+                highlight = page.add_highlight_annot(inst)
+                highlight.update()
+
+        # ----- 2. OCR highlighting for scanned PDFs -----
+        # Render page as image
+        pix = page.get_pixmap()
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+        # OCR with bounding boxes
+        ocr_data = pytesseract.image_to_data(img, output_type=Output.DICT)
+        for i, word in enumerate(ocr_data['text']):
+            for term in terms:
+                if term.lower() in word.lower():
+                    x, y, w, h = (ocr_data['left'][i], ocr_data['top'][i], 
+                                  ocr_data['width'][i], ocr_data['height'][i])
+                    # Convert OCR coords to PDF coordinates
+                    rect = pymupdf.Rect(x, y, x + w, y + h)
+                    highlight = page.add_highlight_annot(rect)
+                    highlight.update()
+
+    # Save PDF once after all highlights
+    doc.save(output_path)
+    doc.close()
+    return output_path
+
 def pipeline_process_pdf(pdf_path, clf_tokenizer, clf_model, nlp_model):
     pdf_id = os.path.splitext(os.path.basename(pdf_path))[0]
     doc = pymupdf.open(pdf_path)
@@ -157,12 +191,13 @@ def pipeline_process_pdf(pdf_path, clf_tokenizer, clf_model, nlp_model):
     #dominant_dept = Counter(dept_votes).most_common(1)[0][0] if dept_votes else "Unknown"
 
     summary = gen_ai1.create_summary(pdf_id)
-
+    output_path = highlight_text(pdf_path, terms=[d['text'] for d in deadlines_all + financials_all], output_path=f"{pdf_id}_highlighted.pdf")
     return {
         #"department": dominant_dept,
         "summary": summary,
         "deadlines": deadlines_all,
         "financials": financials_all,
+        "highlighted_pdf": output_path
     }
 
 
