@@ -1,4 +1,4 @@
-import re
+import regex as re
 import unicodedata
 from collections import Counter
 from pathlib import Path
@@ -11,7 +11,7 @@ import pytesseract
 import spacy
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-
+from pytesseract import Output
 from ner_functions import ner_extraction_multilingual, get_deadline, get_financial_details
 import gen_ai1_init as gen_ai1
 
@@ -21,7 +21,7 @@ CHUNK_TOKEN_OVERLAP = 40
 CLASSIFICATION_MODEL_NAME = "models/Fine_Tunned_Classi"  # Updated model path
 
 BASE_DIR = Path(r"D:\clony\Doc_Load_Automation").resolve()
-LOCAL_CLF_DIR = BASE_DIR / "models" / "classifier"
+LOCAL_CLF_DIR = BASE_DIR / "models" / "Fined_tuned_multi-lingual_classification"
 
 classification_dept_map = {
     0: "Engineering",
@@ -36,9 +36,9 @@ NLP_MODEL = spacy.load("en_core_web_md")
 
 
 def clean_text_multilingual(text):
-    text = unicodedata.normalize("NFKC", text)
-    #text = re.sub(r"[^A-Za-z0-9\s.,;:!?()'\-\"@%$&]", " ", text)
-    text = re.sub(r"[^\w\s.,;:!?()'\-\"@%$&]", " ", text)
+    # text = unicodedata.normalize("NFKC", text)
+    # #text = re.sub(r"[^A-Za-z0-9\s.,;:!?()'\-\"@%$&]", " ", text)
+    # text = re.sub(r"[^\p{L}\p{N}\s.,;:!?()'\-\"@%$&]", " ", text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
@@ -171,9 +171,12 @@ def pipeline_process_pdf(pdf_path, clf_tokenizer, clf_model, nlp_model):
 
     for page_number, page in enumerate(doc, start=1):
         raw_text = extract_page_text(page, doc)
+        
         if not raw_text:
             continue
+        # print("cleaned_text\n")
         cleaned_text = clean_text_multilingual(raw_text)
+        # print(cleaned_text)
         if not cleaned_text:
             continue
 
@@ -184,16 +187,20 @@ def pipeline_process_pdf(pdf_path, clf_tokenizer, clf_model, nlp_model):
         chunks = chunk_text_tokenwise(cleaned_text, tokenizer=clf_tokenizer)
         gen_ai1.encode(pdf_id, page_number,chunks)
 
-        #for chunk in chunks:
-            #dept = classify_text_chunk(chunk, clf_tokenizer, clf_model)
-            #dept_votes.append(dept)
-
-    #dominant_dept = Counter(dept_votes).most_common(1)[0][0] if dept_votes else "Unknown"
+        # print("chunks\n")
+        for chunk in chunks:
+            # print(chunk)
+            dept = classify_text_chunk(chunk, clf_tokenizer, clf_model)
+            dept_votes.append(dept)
+        
+    dominant_dept = Counter(dept_votes).most_common(1)[0][0] if dept_votes else "Unknown"
 
     summary = gen_ai1.create_summary(pdf_id)
-    output_path = highlight_text(pdf_path, terms=[d['text'] for d in deadlines_all + financials_all], output_path=f"{pdf_id}_highlighted.pdf")
+    #print(summary)
+    terms = deadlines_all + financials_all
+    output_path = highlight_text(pdf_path, terms=terms, output_path=f"{pdf_id}_highlighted.pdf")
     return {
-        #"department": dominant_dept,
+        "department": dominant_dept,
         "summary": summary,
         "deadlines": deadlines_all,
         "financials": financials_all,

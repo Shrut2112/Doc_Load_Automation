@@ -63,6 +63,8 @@ query = (
         "inter-departmental coordination issues, staffing and HR priorities, safety bulletins, procurement status, "
         "knowledge retention challenges, and strategic initiatives impacting timely decision-making and operational efficiency."
         "financial performance, budgets, payments, audits, cost control, funding, procurement finance"
+        "പ്രധാന സംഘടനാ പ്രവർത്തനങ്ങൾ, അടിയന്തരമായ നിർണായക ജോലികളും അവസാന തീയതികളും, അനുസരണവും നിയന്ത്രണാത്മകമായ പുതുക്കലുകളും, അന്തർ-വകുപ്പ് ഏകോപന പ്രശ്നങ്ങൾ, സ്റ്റാഫിംഗ്‌യും മാനവ വിഭവശേഷി മുൻഗണനകളും, സുരക്ഷാ ബുള്ളറ്റിനുകൾ, വാങ്ങൽ നില, അറിവ് സംരക്ഷണ വെല്ലുവിളികൾ, സമയബന്ധിതമായ തീരുമാനം കൈക്കൊള്ളലിനെയും പ്രവർത്തന കാര്യക്ഷമതയെയും ബാധിക്കുന്ന തന്ത്രപരമായ പ്രവർത്തനങ്ങൾ." 
+        "സാമ്പത്തിക പ്രകടനം, ബജറ്റുകൾ, പേയ്‌മെന്റുകൾ, ഓഡിറ്റുകൾ, ചെലവ് നിയന്ത്രണം, ഫണ്ടിംഗ്, വാങ്ങൽ ധനകാര്യം."
     )
 
 def query_pinecone_top_k(pdf_id, top_k=10,query=query):
@@ -120,70 +122,12 @@ prompt = ChatPromptTemplate.from_messages([
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=0,
-    max_tokens=1500,
+    max_tokens=1000,
 )
 
 output_parser = StrOutputParser()
 chain = create_stuff_documents_chain(llm, prompt=prompt, output_parser=output_parser)
 
-def extract_page_text(page, doc, page_number):
-    """Extract both PDF text and OCR from images"""
-    raw_text = ""
-
-    # Extract text blocks
-    text_blocks = page.get_text("blocks")
-    if text_blocks:
-        for block in text_blocks:
-            txt = block[4].strip()
-            if txt:
-                raw_text += " " + txt
-        print(f"📄 Page {page_number}: PDF text extracted.")
-
-    # Extract images and OCR
-    images = page.get_images(full=True)
-    if images:
-        for img_index, img in enumerate(images, start=1):
-            xref = img[0]
-            try:
-                img_data = doc.extract_image(xref)
-                image = Image.open(io.BytesIO(img_data["image"]))
-            except Exception as e:
-                print(f"Page {page_number} Image {img_index}: extraction error {e}")
-                continue
-
-            gray = ImageOps.grayscale(image.filter(ImageFilter.MedianFilter(size=3)))
-            scale = 300 / 72
-            base_w = min(int(gray.width * scale), 2500)
-            base_h = min(int(gray.height * scale), 2500)
-            gray_resized = gray.resize((base_w, base_h), Image.LANCZOS)
-
-            try:
-                ocr_text = pytesseract.image_to_string(gray_resized)
-                raw_text += " " + ocr_text
-            except Exception as e:
-                print(f"Page {page_number} OCR error: {e}")
-
-    return raw_text.strip()
-
-def get_text_chunk(pdf,pdf_id):
-    doc = pymupdf.open(pdf)
-
-    for page_number, page in enumerate(doc, start=1):
-        raw_text = extract_page_text(page, doc, page_number)
-        if not raw_text:
-            print(f"⚠️ Page {page_number}: No text found.")
-            continue
-
-        cleaned_text = clean_text_english(raw_text)
-        if not cleaned_text:
-            print(f"⚠️ Page {page_number}: No English text found.")
-            continue
-
-        chunks = chunk_text(cleaned_text, max_length=256, overlap=40)
-        encode(pdf_id,encoder, page_number,chunks)
-
-    summary = create_summary(pdf_id)
-    return summary
 
 def create_summary(pdf_id):
     docs = query_pinecone_top_k(pdf_id)
@@ -196,13 +140,3 @@ def create_summary(pdf_id):
     except Exception as e:
         print(f"Summary generation failed: {e}")
         return f"Summary generation failed: {e}"
-
-# ===================== MAIN =====================
-# if __name__ == "__main__":
-#     pdf_path = "./pdfs/kochi_metro.pdf"
-#     pdf_id = os.path.splitext(os.path.basename(pdf_path))[0]  # e.g. "kochi_metro"
-
-#     #summary = create_summary(pdf_id)
-#     summary = get_text_chunk(pdf_path,pdf_id)
-#     print("\n📌 FINAL SUMMARY:\n", summary)
-    
