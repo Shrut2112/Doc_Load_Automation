@@ -17,7 +17,7 @@ import chromadb
 from PIL import Image, ImageOps, ImageFilter
 import pytesseract
 from dotenv import load_dotenv
-from langchain_chroma import Chroma
+#from langchain_chroma import Chroma
 from langchain.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -26,6 +26,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from preprocess import clean_text_english, chunk_text  # your functions
 from langchain.schema import Document
 from pinecone import ServerlessSpec
+
 load_dotenv()
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY")
@@ -44,11 +45,13 @@ if not pc.has_index(index_name):
 index = pc.Index(index_name)
 
 encoder = HuggingFaceEmbeddings(
-    model_name=r"C:\Users\jains\.cache\huggingface\hub\models--sentence-transformers--all-MiniLM-L6-v2\snapshots\c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+    #apne laptop pr download krke pura path daal de iska
+    model_name=r"C:\Users\jains\.cache\huggingface\hub\models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2\snapshots\86741b4e3f5cb7765a600d3a3d55a0f6a6cb443d",
+    #model_name=r"C:\Users\jains\.cache\huggingface\hub\models--sentence-transformers--all-MiniLM-L6-v2\snapshots\c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
     model_kwargs={"device": "cpu"}
 )
 
-def encode(pdf_id,encoder,page_numb,docs):
+def encode(pdf_id,page_numb,docs,encoder=encoder):
     """Embed and store document chunks"""
     embeddings = encoder.embed_documents(docs)
     vectors = [
@@ -65,7 +68,7 @@ query = (
         "financial performance, budgets, payments, audits, cost control, funding, procurement finance"
     )
 
-def query_pinecone_top_k(query,pdf_id, top_k=10):
+def query_pinecone_top_k(pdf_id, top_k=10,query=query):
     q_emb = encoder.embed_query(query)
     results = index.query(
     vector=q_emb,          # ✅ must use keyword
@@ -82,6 +85,19 @@ def query_pinecone_top_k(query,pdf_id, top_k=10):
     ]
     if not docs:
         print("No doc found")
+        all_results = index.query(
+            vector=[0.0] * 384,   # dummy zero-vector
+            top_k=top_k,
+            include_metadata=True,
+            filter={"pdf_id": pdf_id}
+        )
+        docs = [
+            Document(
+                page_content=match["metadata"].get("text", ""),
+                metadata=match["metadata"]
+            )
+            for match in all_results.get("matches", [])
+        ]
     else:
         print("Chunks found: ",len(docs))
         
@@ -99,12 +115,13 @@ prompt = ChatPromptTemplate.from_messages([
         "3. Compliance and Regulatory Highlights\n"
         "4. Key Departmental Responsibilities and Coordination Needs\n"
         "5. Safety, Staffing, Procurement, and Strategic Initiatives\n"
+        "6. If the text is in english print summary in english else print in hybrid malayalam and english"
     ),
     ("user", "Summarize the following document accordingly:\n\n{context}")
 ])
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
+    model="gemini-2.5-flash",
     temperature=0,
     max_tokens=1500,
 )
@@ -151,7 +168,7 @@ def extract_page_text(page, doc, page_number):
 
     return raw_text.strip()
 
-def get_text_chunk(pdf):
+def get_text_chunk(pdf,pdf_id):
     doc = pymupdf.open(pdf)
 
     for page_number, page in enumerate(doc, start=1):
@@ -172,23 +189,32 @@ def get_text_chunk(pdf):
     return summary
 
 def create_summary(pdf_id):
-    docs = query_pinecone_top_k(query,pdf_id)
+    docs = query_pinecone_top_k(pdf_id)
 
     try:
         summary = chain.invoke({"context": docs})
         print("Summary successfully generated.")
-        # print("Summary:\n", summary.content if hasattr(summary, "content") else summary)
-        return summary
+        # Extract text if wrapped in an object with 'content'
+        if hasattr(summary, "content"):
+            summary_text = summary.content
+        elif isinstance(summary, str):
+            summary_text = summary
+        else:
+            # fallback: convert to string explicitly 
+            summary_text = str(summary)
+
+        print("Summary text:\n", summary_text)
+        return summary_text
     except Exception as e:
         print(f"Summary generation failed: {e}")
         return f"Summary generation failed: {e}"
 
 # ===================== MAIN =====================
-if __name__ == "__main__":
-    pdf_path = "./pdfs/kochi_metro.pdf"
-    pdf_id = os.path.splitext(os.path.basename(pdf_path))[0]  # e.g. "kochi_metro"
+# if __name__ == "__main__":
+#     pdf_path = "./pdfs/kochi_metro.pdf"
+#     pdf_id = os.path.splitext(os.path.basename(pdf_path))[0]  # e.g. "kochi_metro"
 
-    #summary = create_summary(pdf_id)
-    summary = get_text_chunk(pdf_path)
-    print("\n📌 FINAL SUMMARY:\n", summary)
+#     #summary = create_summary(pdf_id)
+#     summary = get_text_chunk(pdf_path,pdf_id)
+#     print("\n📌 FINAL SUMMARY:\n", summary)
     
